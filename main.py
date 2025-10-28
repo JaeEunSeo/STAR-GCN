@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from model import STARGCN
-from data import MovieLens
+from movielens.data import MovieLens
 
 from feature import InputFeatures
 from loss import RatingPredictionLoss, Criterion
@@ -48,6 +48,7 @@ class Trainer:
             en_hidden_feats_dim = 250,
             out_feats_dim = 75,
             r_hidden_feats_dim = 64,
+            inductive = False,
             agg = 'sum',
             drop_out = 0.5,
             activation = 'leaky',
@@ -133,6 +134,7 @@ class Trainer:
             model.train()
 
             # TODO : implement inductive version and masked learning
+            # ufeats / ifeats: InputFeatures => forward
             ufeats, umask_zero, umask_freeze = user_features(torch.arange(n_users).to(device))
             ifeats, imask_zero, imask_freeze = movie_features(torch.arange(n_items).to(device))
 
@@ -207,15 +209,17 @@ class Trainer:
             get_rmse = RatingPredictionLoss()
 
             # TODO : inductive version inference
+
+            if self.inductive:
             
-            # ufeats = user_features.get_unseen_feature(efeats = self.dataset.user_feature)
-            # ifeats = movie_features.get_unseen_feature(efeats = self.dataset.movie_feature)
+                ufeats = user_features.get_unseen_feature(efeats = self.dataset.user_feature)
+                ifeats = movie_features.get_unseen_feature(efeats = self.dataset.movie_feature)
 
-            # ufeats = user_features.get_unseen_feature(torch.arange(n_users).to(self.device))
-            # ifeats = movie_features.get_unseen_feature(torch.arange(n_items).to(self.device))
-
-            ufeats, _, _ = user_features(torch.arange(n_users).to(self.device))
-            ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device))
+                # ufeats = user_features.get_unseen_feature(torch.arange(n_users).to(self.device))
+                # ifeats = movie_features.get_unseen_feature(torch.arange(n_items).to(self.device))
+            else:
+                ufeats, _, _ = user_features(torch.arange(n_users).to(self.device))
+                ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device))
 
             all_ratings, _ = model(self.dataset.train_enc_graph, dec_graph, ufeats, ifeats)
             rmse = 0.

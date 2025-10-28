@@ -121,6 +121,12 @@ class InputFeatures(nn.Module):
         return mask
 
     def forward(self, idx, masked = True):
+        '''
+        return: feats, mask_zero, mask_freeze
+            feats: torch.Tensor node feature 
+            mask_zero: boolean idx mask for zero-masking
+            mask_freeze: boolean idx mask for freezing
+        '''
         feats = self.feats(idx)
 
         if masked:
@@ -131,6 +137,7 @@ class InputFeatures(nn.Module):
         else:
             mask_zero, mask_freeze = None, None
 
+        # 노드 외부 피처를 사용하는 경우 -> structural feature + external feature concat
         if self.external_feats is not None:
             external_feats = self.external_feats(idx)
             feats = torch.cat([feats, external_feats], dim = -1)

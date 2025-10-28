@@ -94,12 +94,14 @@ class MovieLens(object):
     """
     def __init__(self, name, device, mix_cpu_gpu=False,
                  use_one_hot_fea=False, symm=True,
-                 test_ratio=0.1, valid_ratio=0.1):
+                 test_ratio=0.1, valid_ratio=0.1, drop_ratio=0.3):
         self._name = name
         self._device = device
         self._symm = symm
         self._test_ratio = test_ratio
         self._valid_ratio = valid_ratio
+        self.drop_ratio = drop_ratio
+        
         # download and extract
         download_dir = get_download_dir()
         zip_file_path = '{}/{}.zip'.format(download_dir, name)
@@ -198,6 +200,21 @@ class MovieLens(object):
         self.valid_dec_graph = self._generate_dec_graph(valid_rating_pairs)
         self.valid_labels = _make_labels(valid_rating_values)
         self.valid_truths = th.FloatTensor(valid_rating_values).to(device)
+
+        # TODO: edge dropping for cold start scenarios
+        num_edges = len(test_rating_values)
+        num_drop = int(num_edges * (1-drop_ratio))
+
+        if num_drop > 0:
+            drop_indices = np.random.choice(num_edges, size=num_drop, replace=False)
+            keep_indices = np.setdiff1d(np.arange(num_edges), drop_indices)
+
+        # 드롭 적용
+        test_rating_pairs = (
+            test_rating_pairs[0][keep_indices],
+            test_rating_pairs[1][keep_indices]
+        )
+        test_rating_values = test_rating_values[keep_indices]
 
         self.test_enc_graph = self._generate_enc_graph(all_train_rating_pairs, all_train_rating_values, add_support=True)
         self.test_dec_graph = self._generate_dec_graph(test_rating_pairs)
