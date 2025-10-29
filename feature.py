@@ -63,8 +63,8 @@ class InputFeatures(nn.Module):
                 emb_dim,
                 p_zero = 0.2,
                 p_freeze = 0.,
-                efeats = None,
-                efeats_dim = None,
+                e_feats = None,
+                e_feats_dim = None,
                 activation = None
                 ):
         super().__init__()
@@ -80,13 +80,14 @@ class InputFeatures(nn.Module):
         self.p_zero = p_zero
         self.p_freeze = p_freeze
 
-        if efeats is None:
+        if e_feats is None:
             self.external_feats = None
         else:
-            self.external_feats = ExternalFeatures(feats = efeats,
-                                                    out_feats_dim = efeats_dim,
+            self.external_feats = ExternalFeatures(feats = e_feats,
+                                                    out_feats_dim = e_feats_dim,
                                                     activation = activation)
         self.emb_dim = emb_dim
+        print(f"emb_dim: {emb_dim}. n_nodes: {n_nodes}")
         self.feats = nn.Embedding(n_nodes, emb_dim)
 
         self.reset_parameters()
@@ -94,19 +95,20 @@ class InputFeatures(nn.Module):
     def reset_parameters(self):
         torch.nn.init.xavier_normal_(self.feats.weight)
 
-    def get_unseen_feature(self, idx, efeats = None):
+    def get_unseen_feature(self, idx, e_feats = None):
         """generate unseen node features to inductive inference
 
         Parameters
         ----------
-        efeats : torch.FloatTensor (optional)
+        idx: torch.LongTensor
+        e_feats : torch.FloatTensor (optional)
             externel features
         """
         device = self.feats.weight.device
 
         feats = torch.zeros(len(idx), self.emb_dim).to(device)
-        if efeats is not None:
-            efeats = self.external_feats.transform(efeats.to(device))
+        if e_feats is not None:
+            efeats = self.external_feats.transform(e_feats.to(device))
             feats = torch.cat([feats, efeats], dim = -1)
 
         return feats
