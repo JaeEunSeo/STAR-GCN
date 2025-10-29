@@ -5,19 +5,18 @@
 
 </br>
 
-
 ### ✅ **ML-100K**
 
 #### **Usage**
 
 ```
-python main.py --data_name=ml-100k train --iteration=2000 --in_feats_dim=32
+python main.py --data_name=ml-100k train --iteration=2000 --in_feats_dim=32 --e_feats_dim=8
 ```
 
 ### ✳️**inductive setting**
 
 ```
-python main.py --data_name=ml-100k train --inductvie=True --iteration=2000 --in_feats_dim=32
+python main.py --data_name=ml-100k train --inductive=True --iteration=2000 --in_feats_dim=32 --e_feats_dim=8
 ```
 
 #### **Results**
