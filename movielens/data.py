@@ -129,6 +129,17 @@ class MovieLens(object):
             self.all_train_rating_info = self.all_rating_info.iloc[shuffled_idx[num_test: ]]
         else:
             raise NotImplementedError
+        
+        # TODO: cold start scenario
+        # drop 20% of nodes in training graph
+        user_ids = self.all_rating_info['user_id'].unique()
+        num_cold_users = int(len(user_ids) * 0.2)
+        cold_user_ids = np.random.choice(user_ids, size=num_cold_users, replace=False)
+
+        cold_user_mask = self.all_rating_info["user_id"].isin(cold_user_ids)
+        self.test_rating_info = self.all_rating_info[cold_user_mask].copy()
+        self.all_train_rating_info = self.all_rating_info[~cold_user_mask].copy()
+
         print('......')
         num_valid = int(np.ceil(self.all_train_rating_info.shape[0] * self._valid_ratio))
         shuffled_idx = np.random.permutation(self.all_train_rating_info.shape[0])
@@ -209,7 +220,7 @@ class MovieLens(object):
             drop_indices = np.random.choice(num_edges, size=num_drop, replace=False)
             keep_indices = np.setdiff1d(np.arange(num_edges), drop_indices)
 
-        # 드롭 적용
+        # drop applied
         test_rating_pairs = (
             test_rating_pairs[0][keep_indices],
             test_rating_pairs[1][keep_indices]
