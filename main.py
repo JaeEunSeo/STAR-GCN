@@ -22,10 +22,12 @@ class Trainer:
     def __init__(self,
                 data_name = 'ml-100k',
                 valid_ratio = 0.1,
-                test_ratio = 0.1
+                test_ratio = 0.1,
+                inductive=False
                 ):
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.inductive = inductive
         self.dataset = MovieLens(name = data_name,
                                 test_ratio = test_ratio,
                                 valid_ratio = valid_ratio,
@@ -44,11 +46,10 @@ class Trainer:
             n_layers_de = 1,
             recurrent = True,
             in_feats_dim = 32,
-            efeats_dim = None,
+            e_feats_dim = None,
             en_hidden_feats_dim = 250,
             out_feats_dim = 75,
             r_hidden_feats_dim = 64,
-            inductive = False,
             agg = 'sum',
             drop_out = 0.5,
             activation = 'leaky',
@@ -66,7 +67,7 @@ class Trainer:
 
         n_users, n_items = self.dataset.user_feature.shape[0], self.dataset.movie_feature.shape[0]
 
-        if efeats_dim is None:
+        if e_feats_dim is None:
             user_features = InputFeatures(n_nodes = n_users,
                                         emb_dim = in_feats_dim,
                                         p_zero = p_zero / 2,
@@ -80,19 +81,19 @@ class Trainer:
                                         emb_dim = in_feats_dim,
                                         p_zero = p_zero / 2,
                                         p_freeze = p_freeze / 2,
-                                        efeats = self.dataset.user_feature,
-                                        efeats_dim = efeats_dim,
+                                        e_feats = self.dataset.user_feature,
+                                        e_feats_dim = e_feats_dim,
                                         activation = activation)
 
             movie_features = InputFeatures(n_nodes = n_items,
                                         emb_dim = in_feats_dim,
                                         p_zero = p_zero / 2,
                                         p_freeze = p_freeze / 2,
-                                        efeats = self.dataset.movie_feature,
-                                        efeats_dim = efeats_dim,
+                                        e_feats = self.dataset.movie_feature,
+                                        e_feats_dim = e_feats_dim,
                                         activation = activation)
 
-            in_feats_dim += efeats_dim
+            in_feats_dim += e_feats_dim
 
         model = STARGCN(n_blocks = n_blocks,
                         n_layers_en = n_layers_en,
@@ -115,6 +116,7 @@ class Trainer:
         model = model.to(device)
         user_features = user_features.to(device)
         movie_features = movie_features.to(device)
+        self.e_feats_dim = e_feats_dim
 
         criterion = Criterion(weight = weight)
 
@@ -135,8 +137,8 @@ class Trainer:
 
             # TODO : implement inductive version and masked learning
             # ufeats / ifeats: InputFeatures => forward
-            ufeats, umask_zero, umask_freeze = user_features(torch.arange(n_users).to(device))
-            ifeats, imask_zero, imask_freeze = movie_features(torch.arange(n_items).to(device))
+            ufeats, _, _ = user_features(torch.arange(n_users).to(device))
+            ifeats, _, _ = movie_features(torch.arange(n_items).to(device))
 
             all_ratings, all_recon_feats = \
                 model(self.dataset.train_enc_graph, self.dataset.train_dec_graph, ufeats, ifeats)
@@ -208,15 +210,14 @@ class Trainer:
         with torch.no_grad():
             get_rmse = RatingPredictionLoss()
 
-            # TODO : inductive version inference
-
             if self.inductive:
-            
-                ufeats = user_features.get_unseen_feature(efeats = self.dataset.user_feature)
-                ifeats = movie_features.get_unseen_feature(efeats = self.dataset.movie_feature)
-
-                # ufeats = user_features.get_unseen_feature(torch.arange(n_users).to(self.device))
-                # ifeats = movie_features.get_unseen_feature(torch.arange(n_items).to(self.device))
+                if not self.e_feats_dim is None:
+                    # get external features for unseen nodes
+                    ufeats = user_features.get_unseen_feature(idx=torch.arange(n_users).to(self.device), e_feats=self.dataset.user_feature)
+                    ifeats = movie_features.get_unseen_feature(idx=torch.arange(n_items).to(self.device), e_feats=self.dataset.movie_feature)
+                else:
+                    ufeats = user_features.get_unseen_feature(torch.arange(n_users).to(self.device))
+                    ifeats = movie_features.get_unseen_feature(torch.arange(n_items).to(self.device))
             else:
                 ufeats, _, _ = user_features(torch.arange(n_users).to(self.device))
                 ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device))
