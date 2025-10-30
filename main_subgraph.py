@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from model import STARGCN
-from movielens.data import MovieLens
+from movielens.data import MovieLens, to_etype_name
 
 from feature import DRNLSubgraphFeatures
 from loss import RatingPredictionLoss, Criterion
@@ -120,6 +120,12 @@ class SubgraphTrainer:
             emb_dim=in_feats_dim
         ).to(self.device)
         
+        print(f"Original train_enc_graph edge types: {self.dataset.train_enc_graph.canonical_etypes}")
+        
+        # Convert rating values to simple numeric edge type names (e.g., 1.0 -> '1')
+        edge_type_names = [str(int(r)) for r in self.dataset.possible_rating_values]
+        print(f"Edge type names for model: {edge_type_names}")
+        
         # Create STAR-GCN model
         print("Creating STAR-GCN model...")
         model = STARGCN(
@@ -127,6 +133,7 @@ class SubgraphTrainer:
             n_layers_en=n_layers_en,
             n_layers_de=n_layers_de,
             recurrent=recurrent,
+            edge_types=edge_type_names,  # Use converted edge type names
             in_feats_dim=in_feats_dim,
             en_hidden_feats_dim=en_hidden_feats_dim,
             out_feats_dim=out_feats_dim,
@@ -218,7 +225,8 @@ class SubgraphTrainer:
             epoch_loss = 0.0
             epoch_rmse = 0.0
             batch_count = 0
-            
+             
+            # mini-batch training
             for subgraphs, user_labels_list, item_labels_list, ratings, _ in train_loader:
                 batch_loss = 0.0
                 batch_rmse = 0.0
@@ -232,6 +240,10 @@ class SubgraphTrainer:
                     subgraph = subgraph.to(self.device)
                     rating_target = rating.unsqueeze(0)
                     
+                    # Debug: Check subgraph edge types (only for first batch)
+                    if epoch == 0 and batch_count == 0:
+                        print(f"Subgraph edge types: {subgraph.canonical_etypes}")
+                    
                     # Convert DRNL labels to features
                     user_feats = drnl_features(user_labels)
                     item_feats = drnl_features(item_labels)
@@ -244,7 +256,7 @@ class SubgraphTrainer:
                     
                     # Get prediction for target link (position 0, 0)
                     # The target link is the first user and first item in subgraph
-                    pred_rating = all_ratings[-1][0, 0]  # Last block, target position
+                    pred_rating = all_ratings[-1][0]  # Last block, target position
                     
                     # Compute loss
                     rmse = torch.sqrt(rmse_loss(rating_target, pred_rating.unsqueeze(0)))
@@ -254,7 +266,7 @@ class SubgraphTrainer:
                     for pred_ratings, (ufeats_r, ifeats_r) in zip(all_ratings, all_recon_feats):
                         _, _loss = criterion(
                             rating_target,
-                            pred_ratings[0, 0].unsqueeze(0).unsqueeze(0),
+                            pred_ratings[0].unsqueeze(0).unsqueeze(0),
                             user_feats,
                             item_feats,
                             ufeats_r,

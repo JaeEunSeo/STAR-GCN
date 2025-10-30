@@ -82,7 +82,16 @@ class STARGCN(nn.Module):
         for i in range(self.n_blocks):
             block = self.blocks[i] if not self.recurrent else self.blocks[0]
             ufeats_h, ifeats_h, ufeats_r, ifeats_r = block(enc_graph, ufeats, ifeats, ufreeze, ifreeze, ukey, ikey)
-            pred_ratings = self.rating_prediction(dec_graph, ufeats_h, ifeats_h).squeeze(1)
+            pred_ratings_dict = self.rating_prediction(dec_graph, ufeats_h, ifeats_h)
+            
+            # Handle both dict (multiple edge types) and tensor (single edge type) returns
+            if isinstance(pred_ratings_dict, dict):
+                # Concatenate predictions from all edge types
+                pred_ratings = torch.cat([pred_ratings_dict[etype] for etype in sorted(pred_ratings_dict.keys())], dim=0)
+            else:
+                pred_ratings = pred_ratings_dict
+            
+            pred_ratings = pred_ratings.squeeze(1) if pred_ratings.dim() > 1 else pred_ratings
             
             all_ratings.append(pred_ratings)
             all_recon_feats.append((ufeats_r, ifeats_r))

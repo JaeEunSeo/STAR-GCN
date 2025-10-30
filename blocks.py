@@ -255,17 +255,21 @@ class STARBlock(nn.Module):
 if __name__ == '__main__':
     from utils import add_degree
 
-    ratings = [1, 2, 3, 4, 5, 6]
+    ratings = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     users = torch.tensor([0,0,0,1,1,2,3,4,4,4,2,2]).chunk(len(ratings))
     items = torch.tensor([0,3,5,1,2,4,5,6,0,1,3,5]).chunk(len(ratings))
 
     graph_data = {}
     for i in range(len(ratings)):
-        graph_data[('user', f'{i+1}', 'item')] = (users[i], items[i])
-        graph_data[('item', f'reverse-{i+1}', 'user')] = (items[i], users[i])
+        rating_str = str(ratings[i]).replace('.', '_')  # '1_0', '2_0', etc.
+        graph_data[('user', rating_str, 'item')] = (users[i], items[i])
+        graph_data[('item', f'reverse-{rating_str}', 'user')] = (items[i], users[i])
 
     g = dgl.heterograph(graph_data)
-    add_degree(graph = g, edge_types = ratings)
+    
+    # Convert ratings to edge type names for model
+    edge_type_names = [str(r).replace('.', '_') for r in ratings]
+    add_degree(graph = g, edge_types = edge_type_names)
 
     n_users, n_items = 5, 7
     in_feats_dim = 32
@@ -274,7 +278,7 @@ if __name__ == '__main__':
 
     block = STARBlock(n_layers_en = 3,
                     n_layers_de = 4,
-                    edge_types = ratings,
+                    edge_types = edge_type_names,  # Use converted edge type names
                     in_feats_dim = in_feats_dim,
                     hidden_feats_dim = 128,
                     out_feats_dim = 24,

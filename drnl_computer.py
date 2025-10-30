@@ -116,22 +116,27 @@ def compute_drnl_labels(subgraph, target_user_idx=0, target_item_idx=0, max_labe
 
 def subgraph_to_adj(subgraph, n_users, n_items):
     """Convert DGL bipartite subgraph to adjacency matrix"""
-    # Get edges
-    try:
-        src, dst = subgraph.edges(etype='rates')
-    except:
-        # Try other edge type names
-        etypes = subgraph.canonical_etypes
-        for etype in etypes:
-            if 'user' in etype[0] and 'item' in etype[2]:
-                src, dst = subgraph.edges(etype=etype)
-                break
+    # Collect edges from all rating edge types
+    row, col, data = [], [], []
     
-    src = src.cpu().numpy()
-    dst = dst.cpu().numpy()
-    data = np.ones(len(src))
+    etypes = subgraph.canonical_etypes
+    for etype in etypes:
+        src_type, edge_type, dst_type = etype
+        if 'user' in src_type and 'item' in dst_type and not edge_type.startswith('reverse'):
+            src, dst = subgraph.edges(etype=etype)
+            src = src.cpu().numpy()
+            dst = dst.cpu().numpy()
+            
+            row.extend(src)
+            col.extend(dst)
+            data.extend([1] * len(src))  # Binary adjacency for DRNL
     
-    adj = ssp.csr_matrix((data, (src, dst)), shape=(n_users, n_items))
+    if len(row) == 0:
+        # Empty graph
+        adj = ssp.csr_matrix((n_users, n_items))
+    else:
+        adj = ssp.csr_matrix((data, (row, col)), shape=(n_users, n_items))
+    
     return adj
 
 

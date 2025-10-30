@@ -15,7 +15,7 @@ import torch.optim as optim
 from model import STARGCN
 from movielens.data import MovieLens
 
-from feature import InputFeatures
+from feature import InputFeatures, DRNLFeatures
 from loss import RatingPredictionLoss, Criterion
 
 
@@ -65,7 +65,9 @@ class Trainer:
             early_stopping = 150,
             lr_intialize_step = 100,
             lr_decay = 0.5,
-            train_min_lr = 0.0005
+            train_min_lr = 0.0005,
+            use_drnl = False,
+            drnl_max_label = 10
             ):
         wandb.init(
             project="stargcn-movielens",
@@ -86,13 +88,36 @@ class Trainer:
                 "lr": lr, 
                 "iteration": iteration,
                 "early_stopping": early_stopping,
+                "use_drnl": use_drnl,
+                "drnl_max_label": drnl_max_label,
                 "dataset": self.dataset._name if hasattr(self.dataset, '_name') else "unknown"
             }
         )
 
         n_users, n_items = self.dataset.user_feature.shape[0], self.dataset.movie_feature.shape[0]
 
-        if e_feats_dim is None:
+        if use_drnl:
+            # Use DRNL (Double Radius Node Labeling) features
+            print("Using DRNL-based features")
+            # Create separate instances for users and items
+            user_features = DRNLFeatures(
+                graph=self.dataset.train_enc_graph,
+                n_users=n_users,
+                n_items=n_items,
+                emb_dim=in_feats_dim,
+                max_label=drnl_max_label,
+                e_feats_user=self.dataset.user_feature if e_feats_dim else None,
+                e_feats_item=self.dataset.movie_feature if e_feats_dim else None,
+                e_feats_dim=e_feats_dim,
+                activation=activation
+            )
+            # For movie features, we'll use the same instance but specify node_type
+            movie_features = user_features
+            
+            if e_feats_dim:
+                in_feats_dim += e_feats_dim
+                
+        elif e_feats_dim is None:
             user_features = InputFeatures(n_nodes = n_users,
                                         emb_dim = in_feats_dim,
                                         p_zero = p_zero / 2,
@@ -162,8 +187,12 @@ class Trainer:
 
             # TODO : implement inductive version and masked learning
             # ufeats / ifeats: InputFeatures => forward
-            ufeats, _, _ = user_features(torch.arange(n_users).to(device))
-            ifeats, _, _ = movie_features(torch.arange(n_items).to(device))
+            if use_drnl:
+                ufeats, _, _ = user_features(torch.arange(n_users).to(device), node_type='user')
+                ifeats, _, _ = movie_features(torch.arange(n_items).to(device), node_type='item')
+            else:
+                ufeats, _, _ = user_features(torch.arange(n_users).to(device))
+                ifeats, _, _ = movie_features(torch.arange(n_items).to(device))
 
             all_ratings, all_recon_feats = \
                 model(self.dataset.train_enc_graph, self.dataset.train_dec_graph, ufeats, ifeats)
@@ -195,7 +224,7 @@ class Trainer:
                 count_rmse, count_num = 0, 0
 
             if iter_idx and iter_idx % (log_interval*10) == 0:
-                valid_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type = 'valid')
+                valid_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type='valid', use_drnl=use_drnl)
                 wandb.log({"valid_rmse": valid_rmse}, step=iter_idx)
                 log += f" | [valid] rmse : {valid_rmse:.4f}"
 
@@ -203,7 +232,7 @@ class Trainer:
                     best_valid_rmse = valid_rmse
                     no_better_valid = 0
                     best_iter = iter_idx
-                    best_test_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type = 'test')
+                    best_test_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type='test', use_drnl=use_drnl)
                     wandb.log({
                         "best_valid_rmse": best_valid_rmse,
                         "best_test_rmse": best_test_rmse
@@ -233,7 +262,7 @@ class Trainer:
         wandb.finish()
 
         print(f'[END] Best Iter : {best_iter} Best Valid RMSE : {best_valid_rmse:.4f}, Best Test RMSE : {best_test_rmse:.4f}')
-    def evaluate(self, model, n_users, n_items, user_features, movie_features, data_type = 'valid'):
+    def evaluate(self, model, n_users, n_items, user_features, movie_features, data_type='valid', use_drnl=False):
         if data_type == "valid":
             gt_ratings = self.dataset.valid_truths
             dec_graph = self.dataset.valid_dec_graph
@@ -254,8 +283,12 @@ class Trainer:
                     ufeats = user_features.get_unseen_feature(torch.arange(n_users).to(self.device))
                     ifeats = movie_features.get_unseen_feature(torch.arange(n_items).to(self.device))
             else:
-                ufeats, _, _ = user_features(torch.arange(n_users).to(self.device))
-                ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device))
+                if use_drnl:
+                    ufeats, _, _ = user_features(torch.arange(n_users).to(self.device), node_type='user')
+                    ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device), node_type='item')
+                else:
+                    ufeats, _, _ = user_features(torch.arange(n_users).to(self.device))
+                    ifeats, _, _ = movie_features(torch.arange(n_items).to(self.device))
 
             all_ratings, _ = model(self.dataset.train_enc_graph, dec_graph, ufeats, ifeats)
             rmse = 0.
