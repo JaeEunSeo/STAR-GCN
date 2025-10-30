@@ -1,3 +1,5 @@
 *.pyc
 *.pt
 /.vector_cache/*
+*.log
+wandb/
