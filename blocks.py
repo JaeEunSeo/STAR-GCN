@@ -252,40 +252,40 @@ class STARBlock(nn.Module):
 
         return ufeats_h, ifeats_h, ufeats_r, ifeats_r
 
-if __name__ == '__main__':
-    from utils import add_degree
+# if __name__ == '__main__':
+#     from utils import add_degree
 
-    ratings = [1, 2, 3, 4, 5, 6]
-    users = torch.tensor([0,0,0,1,1,2,3,4,4,4,2,2]).chunk(len(ratings))
-    items = torch.tensor([0,3,5,1,2,4,5,6,0,1,3,5]).chunk(len(ratings))
+#     ratings = [1, 2, 3, 4, 5, 6]
+#     users = torch.tensor([0,0,0,1,1,2,3,4,4,4,2,2]).chunk(len(ratings))
+#     items = torch.tensor([0,3,5,1,2,4,5,6,0,1,3,5]).chunk(len(ratings))
 
-    graph_data = {}
-    for i in range(len(ratings)):
-        graph_data[('user', f'{i+1}', 'item')] = (users[i], items[i])
-        graph_data[('item', f'reverse-{i+1}', 'user')] = (items[i], users[i])
+#     graph_data = {}
+#     for i in range(len(ratings)):
+#         graph_data[('user', f'{i+1}', 'item')] = (users[i], items[i])
+#         graph_data[('item', f'reverse-{i+1}', 'user')] = (items[i], users[i])
 
-    g = dgl.heterograph(graph_data)
-    add_degree(graph = g, edge_types = ratings)
+#     g = dgl.heterograph(graph_data)
+#     add_degree(graph = g, edge_types = ratings)
 
-    n_users, n_items = 5, 7
-    in_feats_dim = 32
-    ufeats = torch.rand(n_users, in_feats_dim)
-    ifeats = torch.rand(n_items, in_feats_dim)
+#     n_users, n_items = 5, 7
+#     in_feats_dim = 32
+#     ufeats = torch.rand(n_users, in_feats_dim)
+#     ifeats = torch.rand(n_items, in_feats_dim)
 
-    block = STARBlock(n_layers_en = 3,
-                    n_layers_de = 4,
-                    edge_types = ratings,
-                    in_feats_dim = in_feats_dim,
-                    hidden_feats_dim = 128,
-                    out_feats_dim = 24,
-                    agg = 'sum',
-                    drop_out = 0.,
-                    activation = 'leaky')
+#     block = STARBlock(n_layers_en = 3,
+#                     n_layers_de = 4,
+#                     edge_types = ratings,
+#                     in_feats_dim = in_feats_dim,
+#                     hidden_feats_dim = 128,
+#                     out_feats_dim = 24,
+#                     agg = 'sum',
+#                     drop_out = 0.,
+#                     activation = 'leaky')
 
-    ufeats_h, ifeats_h, ufeats_r, ifeats_r = block(g, ufeats, ifeats)
+#     ufeats_h, ifeats_h, ufeats_r, ifeats_r = block(g, ufeats, ifeats)
 
-    print('hidden feautures') # (n_users, out_feats_dim), (n_items, out_feats_dim)
-    print(ufeats_h.shape, ifeats_h.shape)
+#     print('hidden feautures') # (n_users, out_feats_dim), (n_items, out_feats_dim)
+#     print(ufeats_h.shape, ifeats_h.shape)
 
-    print('reconstruction') # (n_users, in_feats_dim, n_items, in_feats_dim)
-    print(ufeats_r.shape, ifeats_r.shape)
+#     print('reconstruction') # (n_users, in_feats_dim, n_items, in_feats_dim)
+#     print(ufeats_r.shape, ifeats_r.shape)

@@ -65,7 +65,9 @@ class Trainer:
             early_stopping = 150,
             lr_intialize_step = 100,
             lr_decay = 0.5,
-            train_min_lr = 0.0005
+            train_min_lr = 0.0005,
+            adaptive_hop = False,
+            test_n_layers_en = None
             ):
         wandb.init(
             project="stargcn-movielens",
@@ -86,34 +88,44 @@ class Trainer:
                 "lr": lr, 
                 "iteration": iteration,
                 "early_stopping": early_stopping,
+                "adaptive_hop": adaptive_hop,
+                "test_n_layers_en": test_n_layers_en if adaptive_hop else n_layers_en,
                 "dataset": self.dataset._name if hasattr(self.dataset, '_name') else "unknown"
             }
         )
 
         n_users, n_items = self.dataset.user_feature.shape[0], self.dataset.movie_feature.shape[0]
 
+        # Set up adaptive hop strategy
+        if adaptive_hop:
+            if test_n_layers_en is None:
+                test_n_layers_en = n_layers_en + 1  # Default: increase by 1 hop for test
+            print(f"Adaptive hop enabled: Train/Valid={n_layers_en}-hop, Test={test_n_layers_en}-hop")
+        else:
+            test_n_layers_en = n_layers_en
+
         if e_feats_dim is None:
             user_features = InputFeatures(n_nodes = n_users,
                                         emb_dim = in_feats_dim,
-                                        p_zero = p_zero / 2,
-                                        p_freeze = p_freeze / 2)
+                                        p_zero = p_zero,
+                                        p_freeze = p_freeze)
             movie_features = InputFeatures(n_nodes = n_items,
                                         emb_dim = in_feats_dim,
-                                        p_zero = p_zero / 2,
-                                        p_freeze = p_freeze / 2)
+                                        p_zero = p_zero,
+                                        p_freeze = p_freeze)
         else:
             user_features = InputFeatures(n_nodes = n_users,
                                         emb_dim = in_feats_dim,
-                                        p_zero = p_zero / 2,
-                                        p_freeze = p_freeze / 2,
+                                        p_zero = p_zero,
+                                        p_freeze = p_freeze,
                                         e_feats = self.dataset.user_feature,
                                         e_feats_dim = e_feats_dim,
                                         activation = activation)
 
             movie_features = InputFeatures(n_nodes = n_items,
                                         emb_dim = in_feats_dim,
-                                        p_zero = p_zero / 2,
-                                        p_freeze = p_freeze / 2,
+                                        p_zero = p_zero,
+                                        p_freeze = p_freeze,
                                         e_feats = self.dataset.movie_feature,
                                         e_feats_dim = e_feats_dim,
                                         activation = activation)
@@ -203,7 +215,18 @@ class Trainer:
                     best_valid_rmse = valid_rmse
                     no_better_valid = 0
                     best_iter = iter_idx
-                    best_test_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type = 'test')
+                    
+                    # Test evaluation with adaptive hop if enabled
+                    if adaptive_hop:
+                        best_test_rmse = self.evaluate_with_adaptive_hop(
+                            model, n_users, n_items, user_features, movie_features,
+                            n_blocks, n_layers_de, recurrent, in_feats_dim,
+                            en_hidden_feats_dim, r_hidden_feats_dim, out_feats_dim,
+                            agg, drop_out, activation, test_n_layers_en
+                        )
+                    else:
+                        best_test_rmse = self.evaluate(model, n_users, n_items, user_features, movie_features, data_type = 'test')
+                    
                     wandb.log({
                         "best_valid_rmse": best_valid_rmse,
                         "best_test_rmse": best_test_rmse
@@ -233,6 +256,44 @@ class Trainer:
         wandb.finish()
 
         print(f'[END] Best Iter : {best_iter} Best Valid RMSE : {best_valid_rmse:.4f}, Best Test RMSE : {best_test_rmse:.4f}')
+    
+    def evaluate_with_adaptive_hop(self, train_model, n_users, n_items, user_features, movie_features,
+                                 n_blocks, n_layers_de, recurrent, in_feats_dim, en_hidden_feats_dim,
+                                 r_hidden_feats_dim, out_feats_dim, agg, drop_out, activation, test_n_layers_en):
+        """Evaluate with different hop count for test (adaptive hop strategy)"""
+        
+        # Create test model with different hop count
+        test_model = STARGCN(n_blocks = n_blocks,
+                           n_layers_en = test_n_layers_en,
+                           n_layers_de = n_layers_de,
+                           recurrent = recurrent,
+                           edge_types = self.dataset.possible_rating_values,
+                           in_feats_dim = in_feats_dim,
+                           en_hidden_feats_dim = en_hidden_feats_dim,
+                           r_hidden_feats_dim = r_hidden_feats_dim,
+                           out_feats_dim = out_feats_dim,
+                           agg = agg,
+                           drop_out = drop_out,
+                           activation = activation).to(self.device)
+        
+        # Transfer weights from trained model to test model
+        train_state_dict = train_model.state_dict()
+        test_state_dict = test_model.state_dict()
+        
+        # Copy weights that can be transferred
+        for name, param in train_state_dict.items():
+            if name in test_state_dict:
+                if 'encoders.0' in name:  # First encoder layer
+                    test_state_dict[name].copy_(param)
+                elif 'encoders' not in name:  # Non-encoder components
+                    test_state_dict[name].copy_(param)
+                # Additional encoder layers use random initialization
+        
+        test_model.load_state_dict(test_state_dict)
+        
+        # Evaluate with test model
+        return self.evaluate(test_model, n_users, n_items, user_features, movie_features, data_type='test')
+
     def evaluate(self, model, n_users, n_items, user_features, movie_features, data_type = 'valid'):
         if data_type == "valid":
             gt_ratings = self.dataset.valid_truths
